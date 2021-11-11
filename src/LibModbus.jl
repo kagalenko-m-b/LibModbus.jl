@@ -111,7 +111,7 @@ end
 
 # Common for RTU and TCP contexts
 function modbus_set_slave(ctx::ModbusContext, slave::Integer)
-    ret = ccall((:modbus_set_slave, libmodbus), Cint, (Ptr{Cvoid}, Ref{Cint}),
+    ret = ccall((:modbus_set_slave, libmodbus), Cint, (Ptr{Cvoid}, Cint),
                 ctx._ctx_ptr[], slave)
     _strerror(ret, "modbus_set_slave()")
 
@@ -141,10 +141,10 @@ end
 
 
 function modbus_get_response_timeout(ctx::ModbusContext)
-    to_sec = Ref{Cuint}()
-    to_usec = Ref{Cuint}()
+    to_sec = Ref{UInt32}()
+    to_usec = Ref{UInt32}()
     ret = ccall((:modbus_get_response_timeout, libmodbus), Cint,
-                (Ptr{Cvoid}, Ref{Cuint}, Ref{Cuint}),
+                (Ptr{Cvoid}, Ref{UInt32}, Ref{UInt32}),
                 ctx._ctx_ptr[], to_sec, to_usec)
     _strerror(ret, "modbus_get_response_timeout()")
 
@@ -153,7 +153,7 @@ end
 
 function modbus_set_response_timeout(ctx::ModbusContext,  to_sec::Integer, to_usec::Integer)
     ret = ccall((:modbus_set_response_timeout, libmodbus), Cint,
-                (Ptr{Cvoid}, Cuint, Cuint), ctx._ctx_ptr[], to_sec, to_usec)
+                (Ptr{Cvoid}, UInt32, UInt32), ctx._ctx_ptr[], to_sec, to_usec)
     _strerror(ret, "modbus_set_response_timeout()")
 
     return ret
@@ -279,7 +279,7 @@ function modbus_read_input_registers(ctx::ModbusContext, addr::Integer, nb::Inte
     ret = ccall((:modbus_read_input_registers, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt16}), ctx._ctx_ptr[], addr, nb, dest)
     _strerror(ret, "modbus_read_input_registers()")
-    ret == nb || @warn "read $(ret) registers instead of $(nb)"
+    ret <= 0 || ret == nb || @warn "read $(ret) registers instead of $(nb)"
 
     return ret,dest[1:ret]
 end
