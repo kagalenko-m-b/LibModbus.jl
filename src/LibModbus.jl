@@ -3,7 +3,7 @@ module LibModbus
 using LibModbus_jll
 
 export ModbusMapping, TcpContext, RtuContext
-export MODBUS_ERROR_RECOVERY_NONE, MODBUS_ERROR_RECOVERY_LINK
+export MbExcpt, MODBUS_ERROR_RECOVERY_NONE, MODBUS_ERROR_RECOVERY_LINK
 export MODBUS_ERROR_RECOVERY_PROTOCOL
 export modbus_context_valid
 export modbus_set_slave, modbus_get_slave, modbus_set_socket!, modbus_get_socket
@@ -14,18 +14,37 @@ export modbus_close, modbus_flush, modbus_free, modbus_set_debug
 export modbus_read_bits, modbus_read_input_bits, modbus_read_registers
 export modbus_read_input_registers, modbus_write_bit, modbus_write_register
 export modbus_write_bits, modbus_write_registers, modbus_mask_write_register
-export modbus_write_and_read_registers
-export modbus_report_slave_id, modbus_mapping_new_start_address, modbus_mapping_new
+export modbus_write_and_read_registers, modbus_send_raw_request
+export modbus_reply_exception, modbus_report_slave_id
+export modbus_mapping_new_start_address, modbus_mapping_new
 export modbus_mapping_free!, modbus_receive, modbus_reply
-export modbus_tcp_listen, modbus_tcp_accept, tcp_close
-export modbus_rtu_set_serial_mode, modbus_rtu_get_serial_mode, modbus_rtu_set_rts
-export modbus_get_rts, modbus_set_rts_delay, modbus_get_rts_delay
+export modbus_tcp_listen, modbus_tcp_accept, tcp_write, tcp_close
+export modbus_rtu_set_serial_mode, modbus_rtu_get_serial_mode
+export modbus_rtu_set_rts, modbus_get_rts, modbus_set_rts_delay
+export modbus_get_rts_delay
 
 @enum Modbus_error_recovery_mode::Cint begin
     MODBUS_ERROR_RECOVERY_NONE = 0
     MODBUS_ERROR_RECOVERY_LINK = 1<<1
     MODBUS_ERROR_RECOVERY_PROTOCOL = 1<<2
 end
+
+@enum MbExcpt::UInt8 begin
+    MODBUS_EXCEPTION_ILLEGAL_FUNCTION = 0x01
+    MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS
+    MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE
+    MODBUS_EXCEPTION_SLAVE_OR_SERVER_FAILURE
+    MODBUS_EXCEPTION_ACKNOWLEDGE
+    MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY
+    MODBUS_EXCEPTION_NEGATIVE_ACKNOWLEDGE
+    MODBUS_EXCEPTION_MEMORY_PARITY
+    MODBUS_EXCEPTION_NOT_DEFINED
+    MODBUS_EXCEPTION_GATEWAY_PATH
+    MODBUS_EXCEPTION_GATEWAY_TARGET
+    MODBUS_EXCEPTION_MAX
+end
+
+
 
 mutable struct ModbusMapping
     nb_bits::Cint
@@ -51,7 +70,7 @@ struct TcpContext <: ModbusContext
     _ctx_ptr::Ref{Ptr{Modbus_t}}
     function TcpContext(ip_address::String, port::Integer)
         ctx_ptr = ccall((:modbus_new_tcp, libmodbus), Ptr{Modbus_t}, (Cstring, Cint),
-                    ip_address, port)
+                        ip_address, port)
         if ctx_ptr == C_NULL
             _strerror(-1, "TcpContext()")
         end
@@ -92,8 +111,8 @@ struct RtuContext <: ModbusContext
             error("unknown parity value specified")
         end
         ctx_ptr = ccall((:modbus_new_rtu, libmodbus), Ptr{Modbus_t},
-                    (Cstring, Cint, Cchar, Cint, Cint),
-                    device, baud, prt, data_bit, stop_bit)
+                        (Cstring, Cint, Cchar, Cint, Cint),
+                        device, baud, prt, data_bit, stop_bit)
         if ctx_ptr == C_NULL
             _strerror(-1, "RtuContext()")
         end
@@ -105,7 +124,7 @@ end
 function Base.show(io::IO, ctx::RtuContext)
     color = modbus_context_valid(ctx) ? :green : :red
     str =  modbus_context_valid(ctx) ? "RtuContext(device $(ctx.device), baud $(ctx.baud), "*
-    "parity $(ctx.parity)), data_bit $(ctx.data_bit), stop_bit $(ctx.stop_bit))" : "NULL"
+        "parity $(ctx.parity)), data_bit $(ctx.data_bit), stop_bit $(ctx.stop_bit))" : "NULL"
     printstyled(io, str; color)
 end
 
@@ -167,10 +186,10 @@ function modbus_get_byte_timeout(ctx::ModbusContext)
     _strerror(ret, "modbus_get_byte_timeout()")
 
     return ret,Int(to_sec[]),Int(to_usec[])
- end
+end
 
 function modbus_set_byte_timeout(ctx::ModbusContext, to_sec::Integer, to_usec::Integer)
-    ret = ccall((:modbus_set_response_timeout, libmodbus), Cint,
+    ret = ccall((:modbus_set_byte_timeout, libmodbus), Cint,
                 (Ptr{Cvoid}, UInt32, UInt32), ctx._ctx_ptr[], to_sec, to_usec)
     _strerror(ret, "modbus_set_byte_timeout()")
 
@@ -192,7 +211,6 @@ function  modbus_set_error_recovery(ctx::ModbusContext, err_rec::Integer)
     _strerror(ret, "modbus_set_error_recovery()")
 
     return ret
-# int modbus_set_error_recovery(modbus_t *ctx, modbus_error_recovery_mode error_recovery)
 end
 
 function modbus_get_header_length(ctx::ModbusContext)
@@ -249,7 +267,8 @@ end
 function modbus_read_bits(ctx::ModbusContext, addr::Integer, nb::Integer)
     dest = Vector{UInt8}(undef, nb)
     ret = ccall((:modbus_read_bits, libmodbus), Cint,
-                (Ptr{Cvoid}, Cint, Cint, Ref{UInt8}), ctx._ctx_ptr[], addr, nb, dest)
+                (Ptr{Cvoid}, Cint, Cint, Ref{UInt8}),
+                ctx._ctx_ptr[], addr, nb, dest)
     _strerror(ret, "modbus_read_bits()")
 
     return ret,dest[1:ret]
@@ -258,7 +277,8 @@ end
 function modbus_read_input_bits(ctx::ModbusContext, addr::Integer, nb::Integer)
     dest = Vector{UInt8}(undef, nb)
     ret = ccall((:modbus_read_input_bits, libmodbus), Cint,
-                (Ptr{Cvoid}, Cint, Cint, Ref{UInt8}), ctx._ctx_ptr[], addr, nb, dest)
+                (Ptr{Cvoid}, Cint, Cint, Ref{UInt8}),
+                ctx._ctx_ptr[], addr, nb, dest)
     _strerror(ret, "modbus_read_input_bits()")
 
     return ret,dest[1:ret]
@@ -287,7 +307,7 @@ end
 function modbus_write_bit(ctx::ModbusContext, coil_addr::Integer, status::Integer)
     ret = ccall((:modbus_write_bit, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint), ctx._ctx_ptr[], coil_addr, status)
-     _strerror(ret, "modbus_write_bit()")
+    _strerror(ret, "modbus_write_bit()")
 
     return ret
 end
@@ -300,7 +320,9 @@ function modbus_write_register(ctx::ModbusContext, reg_addr::Integer, value::Int
     return ret
 end
 
-function modbus_write_bits(ctx::ModbusContext, addr::Integer, data::Vector{UInt8})
+function modbus_write_bits(
+    ctx::ModbusContext, addr::Integer, data::AbstractVector{UInt8}
+    )
     nb = length(data)
     ret = ccall((:modbus_write_bits, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt8}), ctx._ctx_ptr[], addr, nb, data)
@@ -310,7 +332,9 @@ function modbus_write_bits(ctx::ModbusContext, addr::Integer, data::Vector{UInt8
     return ret
 end
 
-function modbus_write_registers(ctx::ModbusContext, addr::Integer, data::Vector{UInt16})
+function modbus_write_registers(
+    ctx::ModbusContext, addr::Integer, data::AbstractVector{UInt16}
+    )
     nb = length(data)
     ret = ccall((:modbus_write_registers, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt16}), ctx._ctx_ptr[], addr, nb, data)
@@ -335,7 +359,7 @@ end
 function modbus_write_and_read_registers(
     ctx::ModbusContext,
     write_addr::Integer,
-    write_data::Vector{UInt16},
+    write_data::AbstractVector{UInt16},
     read_addr::Integer,
     read_nb::Integer
     )
@@ -343,13 +367,34 @@ function modbus_write_and_read_registers(
     dest = Vector{UInt16}(undef, read_nb)
     ret = ccall((:modbus_write_and_read_registers, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt16}, Cint, Cint, Ref{UInt16}),
-                ctx._ctx_ptr[], write_addr, write_nb, write_data, read_addr, read_nb, dest)
+                ctx._ctx_ptr[], write_addr, write_nb, write_data, read_addr,
+                read_nb, dest)
     _strerror(ret, "modbus_write_and_read_registers()")
     ret <= 0 || ret == read_nb || @warn "read $(ret) registers instead of $(read_nb)"
 
     return ret,dest[1:ret]
 end
 
+function modbus_send_raw_request(
+    ctx::ModbusContext, raw_req::AbstractVector{UInt8}
+    )
+    nb = length(raw_req)
+    ret = ccall((:modbus_send_raw_request, libmodbus), Cint,
+                (Ptr{Cvoid}, Ref{UInt8}, Cint),
+                ctx._ctx_ptr[], raw_req, nb)
+    _strerror(ret, "modbus_send_raw_request()")
+
+    return ret
+end
+
+function modbus_reply_exception(
+    ctx::ModbusContext, req::AbstractVector{UInt8}, exception_code::MbExcpt
+    )
+    ret = ccall((:modbus_reply_exception, libmodbus), Cint,
+                (Ptr{Cvoid}, Ref{UInt8}, Cuint),
+                ctx._ctx_ptr[], req, exception_code)
+    #int modbus_reply_exception(modbus_t *ctx, const uint8_t *req, unsigned int exception_code);
+end
 
 function modbus_report_slave_id(ctx::ModbusContext, max_dest::Integer)
     dest = Vector{UInt8}(undef, max_dest)
@@ -405,10 +450,12 @@ function modbus_receive(ctx::TcpContext)
                 ctx._ctx_ptr[], req)
     _strerror(ret, "modbus_receive()")
 
-    return ret,req
+    return ret,req[1:ret]
 end
 
-function modbus_reply(ctx::ModbusContext, req::Vector{UInt8}, mbm_ptr::Ptr{ModbusMapping})
+function modbus_reply(
+    ctx::ModbusContext, req::AbstractVector{UInt8}, mbm_ptr::Ptr{ModbusMapping}
+    )
     req_length = length(req)
     ret = ccall((:modbus_reply, libmodbus), Cint,
                 (Ptr{Cvoid}, Ref{UInt8}, Cint, Ptr{Cvoid}),
@@ -431,6 +478,16 @@ function modbus_tcp_accept(ctx::TcpContext, s::Cint)
     ret = ccall((:modbus_tcp_accept, libmodbus), Cint, (Ptr{Cvoid}, Ref{Cint}),
                 ctx._ctx_ptr[], s)
     _strerror(ret, "modbus_tcp_accept()")
+
+    return ret
+end
+
+function tcp_write(sockfd::Integer, buf::AbstractVector{UInt8})
+    len = length(buf)
+    r_buf = Ref{Vector{UInt8}}(buf)
+    ret = ccall(:send, Csize_t, (Cint, Ref{Vector{UInt8}}, Csize_t),
+                sockfd, r_buf, len)
+    _strerror(ret, "tcp_close()")
 
     return ret
 end
@@ -477,7 +534,7 @@ function modbus_rtu_get_serial_mode(ctx::RtuContext)
         mode = :Nothing
     end
 
-  return mode
+    return mode
 end
 
 function modbus_rtu_set_rts(ctx::RtuContext, mode::Symbol)
@@ -512,7 +569,7 @@ function modbus_rtu_get_rts(ctx::RtuContext)
         mode = :Nothing
     end
 
-  return mode
+    return mode
 end
 
 function modbus_rtu_set_rts_delay(ctx::RtuContext, us::Int)
