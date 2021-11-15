@@ -18,7 +18,7 @@ export modbus_write_and_read_registers, modbus_send_raw_request
 export modbus_reply_exception, modbus_report_slave_id
 export modbus_mapping_new_start_address, modbus_mapping_new
 export modbus_mapping_free!, modbus_receive, modbus_reply
-export modbus_tcp_listen, modbus_tcp_accept, tcp_write, tcp_close
+export modbus_tcp_listen, modbus_tcp_accept, tcp_close
 export modbus_rtu_set_serial_mode, modbus_rtu_get_serial_mode
 export modbus_rtu_set_rts, modbus_get_rts, modbus_set_rts_delay
 export modbus_get_rts_delay
@@ -403,7 +403,7 @@ function modbus_report_slave_id(ctx::ModbusContext, max_dest::Integer)
     _strerror(ret, "modbus_report_slave_id()")
     ret <= max_dest || @warn "$(ret) bytes of output truncated to $(max_dest)"
 
-    return ret, dest #[1:min(max_dest, ret)]
+    return ret, dest[1:min(max_dest, ret)]
 end
 
 function modbus_mapping_new_start_address(
@@ -478,16 +478,6 @@ function modbus_tcp_accept(ctx::TcpContext, s::Cint)
     ret = ccall((:modbus_tcp_accept, libmodbus), Cint, (Ptr{Cvoid}, Ref{Cint}),
                 ctx._ctx_ptr[], s)
     _strerror(ret, "modbus_tcp_accept()")
-
-    return ret
-end
-
-function tcp_write(sockfd::Integer, buf::AbstractVector{UInt8})
-    len = length(buf)
-    r_buf = Ref{Vector{UInt8}}(buf)
-    ret = ccall(:send, Csize_t, (Cint, Ref{Vector{UInt8}}, Csize_t),
-                sockfd, r_buf, len)
-    _strerror(ret, "tcp_close()")
 
     return ret
 end
