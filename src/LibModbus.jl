@@ -129,6 +129,18 @@ function Base.show(io::IO, ctx::RtuContext)
 end
 
 # Common for RTU and TCP contexts
+"""
+    modbus_set_slave(ctx::ModbusContext, slave::Integer) -> Integer
+
+Set the slave number in the libmodbus context 
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::ModbusContext, slave::Integer
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_set_slave(ctx::ModbusContext, slave::Integer)
     ret = ccall((:modbus_set_slave, libmodbus), Cint, (Ptr{Cvoid}, Cint),
                 ctx._ctx_ptr[], slave)
@@ -137,6 +149,17 @@ function modbus_set_slave(ctx::ModbusContext, slave::Integer)
     return ret
 end
 
+"""
+    modbus_get_slave(ctx::ModbusContext) -> Integer
+
+Get the slave number in the libmodbus context.
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+
+# Returns
+-`rc::Int`: slave number if successful, otherwise return -1 and set errno
+"""
 function modbus_get_slave(ctx::ModbusContext)
     ret = ccall((:modbus_get_slave, libmodbus), Cint, (Ptr{Cvoid},), ctx._ctx_ptr[])
     _strerror(ret, "modbus_get_slave()")
@@ -144,6 +167,18 @@ function modbus_get_slave(ctx::ModbusContext)
     return ret
 end
 
+"""
+    modbus_set_socket!(ctx::ModbusContext, s::Integer) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::ModbusContext, s::Integer
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_set_socket!(ctx::ModbusContext, s::Integer)
     ret = ccall((:modbus_set_socket, libmodbus), Cint, (Ptr{Cvoid}, Cint), ctx._ctx_ptr[], s)
     _strerror(ret, "modbus_set_socket!()")
@@ -151,6 +186,18 @@ function modbus_set_socket!(ctx::ModbusContext, s::Integer)
     return ret
 end
 
+"""
+    modbus_get_socket(ctx::ModbusContext) -> Integer
+
+Get the current socket of the context 
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+
+# Returns
+-`rc::Int`: current socket or file descriptor of the context if successful,
+    otherwise return -1 and set errno
+"""
 function modbus_get_socket(ctx::ModbusContext)
     ret = ccall((:modbus_get_socket, libmodbus), Cint, (Ptr{Cvoid},), ctx._ctx_ptr[])
     _strerror(ret, "modbus_get_socket()")
@@ -159,6 +206,19 @@ function modbus_get_socket(ctx::ModbusContext)
 end
 
 
+"""
+    modbus_get_response_timeout(ctx::ModbusContext) -> Integer,Int,Int
+
+Get timeout interval used to wait for a response
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+-`to_sec::Int`: seconds of the response timeout
+-`to_usec`: microseconds of the response timeout
+"""
 function modbus_get_response_timeout(ctx::ModbusContext)
     to_sec = Ref{UInt32}()
     to_usec = Ref{UInt32}()
@@ -170,6 +230,26 @@ function modbus_get_response_timeout(ctx::ModbusContext)
     return ret,Int(to_sec[]),Int(to_usec[])
 end
 
+"""
+    modbus_set_response_timeout(ctx::ModbusContext, to_sec::Integer, to_usec::Integer) 
+                                                                                    -> Integer
+
+Set the timeout interval used to wait for a response. When a byte timeout is set,
+if elapsed time for the first byte of response is longer than the given timeout,
+an ETIMEDOUT error will be raised by the function waiting for a response.
+When byte timeout is disabled, the full confirmation response must be received before
+expiration of the response timeout.
+
+The value of to_usec argument must be in the range 0 to 999999.
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+- `to_sec::Integer`: seconds of the response timeout
+- `to_usec::Integer`: microseconds part of the response timeout
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_set_response_timeout(ctx::ModbusContext,  to_sec::Integer, to_usec::Integer)
     ret = ccall((:modbus_set_response_timeout, libmodbus), Cint,
                 (Ptr{Cvoid}, UInt32, UInt32), ctx._ctx_ptr[], to_sec, to_usec)
@@ -178,6 +258,19 @@ function modbus_set_response_timeout(ctx::ModbusContext,  to_sec::Integer, to_us
     return ret
 end
 
+"""
+    modbus_get_byte_timeout(ctx::ModbusContext) -> Integer,Int,Int
+
+Timeout interval between two consecutive bytes of the same message 
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+-`to_sec::Int`: seconds of the byte timeout
+-`to_usec`: microseconds of the byte timeout
+"""
 function modbus_get_byte_timeout(ctx::ModbusContext)
     to_sec = Ref{UInt32}(0)
     to_usec = Ref{UInt32}(0)
@@ -188,6 +281,30 @@ function modbus_get_byte_timeout(ctx::ModbusContext)
     return ret,Int(to_sec[]),Int(to_usec[])
 end
 
+"""
+    modbus_set_byte_timeout(ctx::ModbusContext, to_sec::Integer, to_usec::Integer) -> Integer
+
+Set the timeout interval between two consecutive bytes of the same message. The timeout
+is an upper bound on the amount of time elapsed before select() returns, if
+the time elapsed is longer than the defined timeout, an ETIMEDOUT error will be raised 
+by the function waiting for a response.
+
+The value of to_usec argument must be in the range 0 to 999999.
+
+If both to_sec and to_usec are zero, this timeout will not be used at all.
+In this case, modbus_set_response_timeout() governs the entire handling of the response,
+the full confirmation response must be received before expiration of the response timeout. 
+When a byte timeout is set, the response timeout is only used to wait for
+until the first byte of the response.
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+-`to_sec::Int`: seconds of the byte timeout
+-`to_usec`: microseconds of the byte timeout
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_set_byte_timeout(ctx::ModbusContext, to_sec::Integer, to_usec::Integer)
     ret = ccall((:modbus_set_byte_timeout, libmodbus), Cint,
                 (Ptr{Cvoid}, UInt32, UInt32), ctx._ctx_ptr[], to_sec, to_usec)
@@ -205,6 +322,44 @@ end
 
 #   # int
 # end
+"""
+    modbus_set_error_recovery(ctx::ModbusContext, err_rec::Integer) -> Integer
+
+Set the error recovery mode to apply when the connection fails or the byte received is not
+expected. The argument error_recovery may be bitwise-or’ed with zero or more
+of the following constants.
+
+By default there is no error recovery (MODBUS_ERROR_RECOVERY_NONE) so the application
+is responsible for controlling the error values returned by libmodbus functions
+and for handling them if necessary.
+
+When MODBUS_ERROR_RECOVERY_LINK is set, the library will attempt an reconnection
+after a delay defined by response timeout of the libmodbus context. This mode will try
+an infinite close/connect loop until success on send call and will just try one time
+to re-establish the connection on select/read calls (if the connection was down,
+the values to read are certainly not available any more after reconnection,
+except for slave/server). This mode will also run flush requests after a delay
+based on the current response timeout in some situations (eg. timeout of select call).
+The reconnection attempt can hang for several seconds if the network to the remote target
+unit is down.
+
+When MODBUS_ERROR_RECOVERY_PROTOCOL is set, a sleep and flush sequence will be used
+to clean up the ongoing communication, this can occurs when the message length is invalid,
+the TID is wrong or the received function code is not the expected one.
+The response timeout delay will be used to sleep.
+
+The modes are mask values and so they are complementary.
+
+It’s not recommended to enable error recovery for slave/server.
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+-`to_sec::Int`: seconds of the byte timeout
+-`to_usec`: microseconds of the byte timeout
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function  modbus_set_error_recovery(ctx::ModbusContext, err_rec::Integer)
     ret = ccall((:modbus_set_error_recovery, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint), ctx._ctx_ptr[], Cint(err_rec))
@@ -213,6 +368,17 @@ function  modbus_set_error_recovery(ctx::ModbusContext, err_rec::Integer)
     return ret
 end
 
+"""
+    modbus_get_header_length(ctx::ModbusContext) -> Integer
+
+Retrieve the current header length from the backend. 
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+
+# Returns
+-`rc::Int`: the header length as an integer value, negative in case of error.
+"""
 function modbus_get_header_length(ctx::ModbusContext)
     ret = ccall((:modbus_get_header_length, libmodbus), Cint, (Ptr{Cvoid},), ctx._ctx_ptr[])
     _strerror(ret, "modbus_get_header_length()")
@@ -220,6 +386,18 @@ function modbus_get_header_length(ctx::ModbusContext)
     return ret
 end
 
+"""
+    modbus_connect(ctx::ModbusContext) -> Integer
+
+Establish a connection to a Modbus server, a network or a bus using the context information
+of libmodbus context given in argument.
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_connect(ctx::ModbusContext)
     ret = ccall((:modbus_connect, libmodbus), Cint, (Ptr{Cvoid},), ctx._ctx_ptr[])
     _strerror(ret, "modbus_connect()")
@@ -227,10 +405,33 @@ function modbus_connect(ctx::ModbusContext)
     return ret
 end
 
+"""
+    modbus_close(ctx::ModbusContext)
+
+Close the connection established with the backend set in the context.
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+
+# Returns
+nothing
+"""
 function modbus_close(ctx::ModbusContext)
     ccall((:modbus_close, libmodbus), Cvoid, (Ptr{Cvoid},), ctx._ctx_ptr[])
 end
 
+"""
+    modbus_free!(ctx::ModbusContext)
+
+Free an allocated ModbusContext structure.
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::ModbusContext
+
+# Returns
+nothing
+"""
 function modbus_free!(ctx::ModbusContext)
     ccall((:modbus_free, libmodbus), Cvoid, (Ptr{Cvoid},), ctx._ctx_ptr[])
     ctx._ctx_ptr[] = C_NULL
@@ -238,6 +439,18 @@ function modbus_free!(ctx::ModbusContext)
     return nothing
 end
 
+"""
+    modbus_flush(ctx::ModbusContext) -> Integer
+
+Discard data received but not read to the socket or file descriptor associated
+to the context.
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_flush(ctx::ModbusContext)
     ret = ccall((:modbus_flush, libmodbus), Cint, (Ptr{Cvoid},), ctx._ctx_ptr[])
     _strerror(ret, "modbus_flush()")
@@ -245,6 +458,19 @@ function modbus_flush(ctx::ModbusContext)
     return ret
 end
 
+"""
+    modbus_set_debug(ctx::ModbusContext, flag::Bool) -> Integer
+
+Set the debug flag of the context. By default, the boolean flag is set to false.
+When the flag value is set to true, many verbose messages are displayed.
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+- `flag::Bool`: display debug information if true
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_set_debug(ctx::ModbusContext, flag::Bool)
     ret = ccall((:modbus_set_debug, libmodbus), Cint, (Ptr{Cvoid},Cint),
                 ctx._ctx_ptr[], flag)
@@ -264,16 +490,46 @@ function _strerror(return_code::Integer, message::AbstractString)
     return nothing
 end
 
+"""
+    modbus_read_bits(ctx::ModbusContext, addr::Integer, nb::Integer) -> Integer,Vector
+
+Read the status of the nb bits (coils) at the address addr of the remote device and
+return a vector of the results as unsigned bytes, one per each logical value.
+
+The function uses the Modbus function code 0x01 (read coil status).
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+- `addr::Integer`: address to begin reading at
+- `nb::Integer`: number of coil to read
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+
+"""
 function modbus_read_bits(ctx::ModbusContext, addr::Integer, nb::Integer)
     dest = Vector{UInt8}(undef, nb)
     ret = ccall((:modbus_read_bits, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt8}),
                 ctx._ctx_ptr[], addr, nb, dest)
     _strerror(ret, "modbus_read_bits()")
+    # bv = ret > 0 ? BitVector(dest[1:ret]) : BitVector[]
 
     return ret,dest[1:ret]
 end
 
+"""
+    modbus_read_input_bits(ctx::ModbusContext, addr::Integer, nb::Integer) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::ModbusContext, addr::Integer, nb::Integer
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_read_input_bits(ctx::ModbusContext, addr::Integer, nb::Integer)
     dest = Vector{UInt8}(undef, nb)
     ret = ccall((:modbus_read_input_bits, libmodbus), Cint,
@@ -284,6 +540,18 @@ function modbus_read_input_bits(ctx::ModbusContext, addr::Integer, nb::Integer)
     return ret,dest[1:ret]
 end
 
+"""
+    modbus_read_registers(ctx::ModbusContext, addr::Integer, nb::Integer) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::ModbusContext, addr::Integer, nb::Integer
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_read_registers(ctx::ModbusContext, addr::Integer, nb::Integer)
     dest = Vector{UInt16}(undef, nb)
     ret = ccall((:modbus_read_registers, libmodbus), Cint,
@@ -294,6 +562,18 @@ function modbus_read_registers(ctx::ModbusContext, addr::Integer, nb::Integer)
     return ret,dest[1:ret]
 end
 
+"""
+    modbus_read_input_registers(ctx::ModbusContext, addr::Integer, nb::Integer) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::ModbusContext, addr::Integer, nb::Integer
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_read_input_registers(ctx::ModbusContext, addr::Integer, nb::Integer)
     dest = Vector{UInt16}(undef, nb)
     ret = ccall((:modbus_read_input_registers, libmodbus), Cint,
@@ -304,6 +584,18 @@ function modbus_read_input_registers(ctx::ModbusContext, addr::Integer, nb::Inte
     return ret,dest[1:ret]
 end
 
+"""
+    modbus_write_bit(ctx::ModbusContext, coil_addr::Integer, status::Integer) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::ModbusContext, coil_addr::Integer, status::Integer
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_write_bit(ctx::ModbusContext, coil_addr::Integer, status::Integer)
     ret = ccall((:modbus_write_bit, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint), ctx._ctx_ptr[], coil_addr, status)
@@ -312,6 +604,18 @@ function modbus_write_bit(ctx::ModbusContext, coil_addr::Integer, status::Intege
     return ret
 end
 
+"""
+    modbus_write_register(ctx::ModbusContext, reg_addr::Integer, value::Integer) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::ModbusContext, reg_addr::Integer, value::Integer
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_write_register(ctx::ModbusContext, reg_addr::Integer, value::Integer)
     ret = ccall((:modbus_write_register, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, UInt16), ctx._ctx_ptr[], reg_addr, value)
@@ -396,6 +700,18 @@ function modbus_reply_exception(
     #int modbus_reply_exception(modbus_t *ctx, const uint8_t *req, unsigned int exception_code);
 end
 
+"""
+    modbus_report_slave_id(ctx::ModbusContext, max_dest::Integer) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::ModbusContext, max_dest::Integer
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_report_slave_id(ctx::ModbusContext, max_dest::Integer)
     dest = Vector{UInt8}(undef, max_dest)
     ret = ccall((:modbus_report_slave_id, libmodbus), Cint,
@@ -444,6 +760,18 @@ function modbus_mapping_free!(mbm_ptr::Ptr{ModbusMapping})
           (Ptr{ModbusMapping},), mbm_ptr)
 end
 
+"""
+    modbus_receive(ctx::TcpContext) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::TcpContext
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_receive(ctx::TcpContext)
     req = Vector{UInt8}(undef, MODBUS_TCP_MAX_ADU_LENGTH)
     ret = ccall((:modbus_receive, libmodbus), Cint, (Ptr{Cvoid}, Ref{UInt8}),
@@ -466,6 +794,18 @@ function modbus_reply(
 end
 
 # TCP context
+"""
+    modbus_tcp_listen(ctx::TcpContext, nb_connection::Integer) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::TcpContext, nb_connection::Integer
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_tcp_listen(ctx::TcpContext, nb_connection::Integer)
     ret = ccall((:modbus_tcp_listen, libmodbus), Cint, (Ptr{Cvoid}, Cint),
                 ctx._ctx_ptr[], nb_connection)
@@ -474,6 +814,18 @@ function modbus_tcp_listen(ctx::TcpContext, nb_connection::Integer)
     return ret
 end
 
+"""
+    modbus_tcp_accept(ctx::TcpContext, s::Cint) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::TcpContext, s::Cint
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_tcp_accept(ctx::TcpContext, s::Cint)
     ret = ccall((:modbus_tcp_accept, libmodbus), Cint, (Ptr{Cvoid}, Ref{Cint}),
                 ctx._ctx_ptr[], s)
@@ -496,6 +848,18 @@ const MODBUS_RTU_RTS_NONE =  0
 const MODBUS_RTU_RTS_UP = 1
 const MODBUS_RTU_RTS_DOWN = 2
 
+"""
+    modbus_rtu_set_serial_mode(ctx::RtuContext, mode::Symbol) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::RtuContext, mode::Symbol
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_rtu_set_serial_mode(ctx::RtuContext, mode::Symbol)
     if mode is :RS485
         m_code = MODBUS_RTU_RS485
@@ -511,6 +875,18 @@ function modbus_rtu_set_serial_mode(ctx::RtuContext, mode::Symbol)
     return ret
 end
 
+"""
+    modbus_rtu_get_serial_mode(ctx::RtuContext) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::RtuContext
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_rtu_get_serial_mode(ctx::RtuContext)
     ret = ccall((:modbus_rtu_get_serial_mode, libmodbus), Cint,
                 (Ptr{Cvoid},), ctx._ctx_ptr[])
@@ -527,6 +903,18 @@ function modbus_rtu_get_serial_mode(ctx::RtuContext)
     return mode
 end
 
+"""
+    modbus_rtu_set_rts(ctx::RtuContext, mode::Symbol) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::RtuContext, mode::Symbol
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_rtu_set_rts(ctx::RtuContext, mode::Symbol)
     if mode is :RTS_NONE
         m_code = MODBUS_RTU_RTS_NONE
@@ -544,6 +932,18 @@ function modbus_rtu_set_rts(ctx::RtuContext, mode::Symbol)
     return ret
 end
 
+"""
+    modbus_rtu_get_rts(ctx::RtuContext) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::RtuContext
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_rtu_get_rts(ctx::RtuContext)
     ret = ccall((:modbus_rtu_get_rts, libmodbus), Cint,
                 (Ptr{Cvoid},), ctx._ctx_ptr[])
@@ -562,6 +962,18 @@ function modbus_rtu_get_rts(ctx::RtuContext)
     return mode
 end
 
+"""
+    modbus_rtu_set_rts_delay(ctx::RtuContext, us::Int) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::RtuContext, us::Int
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_rtu_set_rts_delay(ctx::RtuContext, us::Int)
     ret = ccall((:modbus_rtu_set_rts_delay, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint), ctx._ctx_ptr[], us)
@@ -570,6 +982,18 @@ function modbus_rtu_set_rts_delay(ctx::RtuContext, us::Int)
     return ret
 end
 
+"""
+    modbus_rtu_get_rts_delay(ctx::RtuContext) -> Integer
+
+Function to ...
+
+# Arguments
+- `ctx::ModbusContext`: libmodbus context
+ctx::RtuContext
+
+# Returns
+-`rc::Int`: the return code is negative in case of error, 0 if successful.
+"""
 function modbus_rtu_get_rts_delay(ctx::RtuContext)
     ret = ccall((:modbus_rtu_get_rts_delay, libmodbus), Cint,
                 (Ptr{Cvoid},), ctx._ctx_ptr[])

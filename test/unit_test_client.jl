@@ -8,6 +8,7 @@ function unit_test_client(verbose=true)
     modbus_flush(ctx_cl)
     #modbus_set_error_recovery(ctx_cl, Int(MODBUS_ERROR_RECOVERY_LINK) |
     #    Int(MODBUS_ERROR_RECOVERY_PROTOCOL))
+   @testset "LibModbus.jl tests" begin
     rc,old_response_to_sec,old_response_to_usec = modbus_get_response_timeout(ctx_cl)
     modbus_connect(ctx_cl) >= 0 || error("connection failed")
     @testset "1/1 No response timeout modification on connect" begin
@@ -15,7 +16,6 @@ function unit_test_client(verbose=true)
         @test ((old_response_to_sec,old_response_to_usec)
                == (new_response_to_sec,new_response_to_usec))
     end
-#    @testset "Tests involving connection to server" begin
         @testset "Single coil bits" begin
             verbose && println("1/2 modbus_write_bit: ")
             rc = modbus_write_bit(ctx_cl, UT_BITS_ADDRESS, 0x1)
@@ -23,7 +23,7 @@ function unit_test_client(verbose=true)
             verbose && println("2/2 modbus_read_bits: ")
             rc,rp_bits = modbus_read_bits(ctx_cl, UT_BITS_ADDRESS, 0x1)
             @test rc == 1
-            @test rp_bits[1] == 1
+            @test length(rp_bits) > 0 && rp_bits[1] == 1
         end
         
         @testset "Multiple coil bits" begin
@@ -435,6 +435,6 @@ function unit_test_client(verbose=true)
             errn = errno()
             @test !modbus_context_valid(ctx_cl) && errn == Libc.EINVAL
         end
-#    end
+    end
     nothing
 end
