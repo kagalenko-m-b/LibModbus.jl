@@ -1,215 +1,7 @@
-# Values from modbus.h file of libmodbus
-# Random number to avoid errno conflicts
-using Test
-using LibModbus;LM=LibModbus;
+function unit_test_client(verbose=true)
+    bits_tab = Vector{UInt8}(make_bitvector(UT_BITS_TAB, UT_BITS_NB))
+    input_bits_tab = Vector{UInt8}(make_bitvector(UT_INPUT_BITS_TAB, UT_INPUT_BITS_NB))
 
-(@isdefined verbose) || (verbose = false)
-
-if !((@isdefined _MODBUS_CONSTANTS_) && _MODBUS_CONSTANTS_)
-    _MODBUS_CONSTANTS_ = true
-
-    const MODBUS_BROADCAST_ADDRESS = 0
-
-    const MODBUS_MAX_READ_BITS = 2000
-    const MODBUS_MAX_WRITE_BITS = 1968
-    const MODBUS_MAX_READ_REGISTERS = 125
-    const MODBUS_MAX_WRITE_REGISTERS = 123
-
-    # Protocol exceptions
-
-    const MODBUS_ENOBASE =  112345678
-
-    const EMBXILFUN = (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_ILLEGAL_FUNCTION))
-    const EMBXILADD = (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS))
-    const EMBXILVAL = (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE))
-    const EMBXSFAIL = (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_SLAVE_OR_SERVER_FAILURE))
-    const EMBXACK =   (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_ACKNOWLEDGE))
-    const EMBXSBUSY = (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY))
-    const EMBXNACK =  (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_NEGATIVE_ACKNOWLEDGE))
-    const EMBXMEMPAR = (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_MEMORY_PARITY))
-    const EMBXGPATH = (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_GATEWAY_PATH))
-    const EMBXGTAR =  (MODBUS_ENOBASE + UInt8(LM.MODBUS_EXCEPTION_GATEWAY_TARGET))
-
-    # Native libmodbus error codes
-    const EMBBADCRC =   (EMBXGTAR + 1)
-    const EMBBADDATA =  (EMBXGTAR + 2)
-    const EMBBADEXC =   (EMBXGTAR + 3)
-    const EMBUNKEXC =   (EMBXGTAR + 4)
-    const EMBMDATA =    (EMBXGTAR + 5)
-    const EMBBADSLAVE =  (EMBXGTAR + 6)
-
-    # Values from tests/unit-test-server.h file of libmodbus
-    const UT_BITS_ADDRESS = 0x130
-    const UT_BITS_NB = 0x25
-    const UT_BITS_TAB = [ 0xCD, 0x6B, 0xB2, 0x0E, 0x1B ]
-
-    const UT_INPUT_BITS_ADDRESS = 0x1C4
-    const UT_INPUT_BITS_NB = 0x16
-    const UT_INPUT_BITS_TAB = [ 0xAC, 0xDB, 0x35 ]
-
-    const UT_REGISTERS_ADDRESS = 0x160
-    const UT_REGISTERS_NB = 0x3
-    const UT_REGISTERS_NB_MAX = 0x20
-    const UT_REGISTERS_TAB = [ 0x022B, 0x0001, 0x0064 ]
-
-    const UT_INPUT_REGISTERS_ADDRESS = 0x108
-    const UT_INPUT_REGISTERS_NB = 0x1
-    const UT_INPUT_REGISTERS_TAB = [ 0x000A ]
-
-    const INVALID_SERVER_ID = 18
-    const UT_REGISTERS_ADDRESS_SPECIAL = 0x0170
-    const UT_REGISTERS_ADDRESS_INVALID_TID_OR_SLAVE = 0x0171
-    const UT_REGISTERS_ADDRESS_SLEEP_500_MS = 0x0172
-    const UT_REGISTERS_ADDRESS_BYTE_SLEEP_5_MS = 0x0173
-    const UT_REGISTERS_NB_SPECIAL = 0x0002
-
-    const NB_REPORT_SLAVE_ID = 10
-end
-
-if !(@isdefined mb_mapping)
-    mb_mapping = modbus_mapping_new_start_address(
-        UT_BITS_ADDRESS, UT_BITS_NB,
-        UT_INPUT_BITS_ADDRESS, UT_INPUT_BITS_NB,
-        UT_REGISTERS_ADDRESS, UT_REGISTERS_NB_MAX,
-        UT_INPUT_REGISTERS_ADDRESS, UT_INPUT_REGISTERS_NB
-    )
-end
-
-errno = Libc.errno
-"""
-Idea from https://discourse.julialang.org/t/i-have-vector-uint8-i-need-bitvector/2286/5
-"""
-function make_bitvector(v::AbstractVector{T}) where T<:Union{UInt8,UInt16,UInt32,UInt64}
-    siz = sizeof(v)
-    bv = falses(siz<<3)
-    unsafe_copyto!(reinterpret(Ptr{UInt8}, pointer(bv.chunks)), pointer(v), siz)
-    bv
-end
-make_bitvector(v, nb::Integer) = make_bitvector(v)[1:nb]
-
-bits_tab = Vector{UInt8}(make_bitvector(UT_BITS_TAB, UT_BITS_NB))
-input_bits_tab = Vector{UInt8}(make_bitvector(UT_INPUT_BITS_TAB, UT_INPUT_BITS_NB))
-
-
-for (k, x) in enumerate(UT_BITS_TAB)
-    unsafe_store!(unsafe_load(mb_mapping).tab_bits, x, k)
-end
-for (k, x) in enumerate(input_bits_tab)
-    unsafe_store!(unsafe_load(mb_mapping).tab_input_bits, x, k)
-end
-for (k, x) in enumerate(UT_INPUT_REGISTERS_TAB)
-    unsafe_store!(unsafe_load(mb_mapping).tab_input_registers, x, k)
-end
-for (k, x) in enumerate(UT_REGISTERS_TAB)
-    unsafe_store!(unsafe_load(mb_mapping).tab_registers, x, k)
-end
-
-if !(@isdefined(ctx) && modbus_context_valid(ctx))
-    ctx = TcpContext("127.0.0.1", 1502)
-end
-# s = tcp_listen(mc, 1)
-# tcp_accept(ctx, &s)
-
-get_uint16(arr::Vector{UInt8}, k::Integer) = reinterpret(UInt16, view(arr, k + 1:-1:k))[]
-function set_uint16!(arr::Vector{UInt8}, k::Integer, val::Integer)
-    v_k = view(arr, k + 1:-1:k)
-    v_k .= reinterpret(UInt8, [UInt16(val)])
-end
-function tcp_write_byte(sockfd::Integer, buf::AbstractVector{UInt8}, idx)
-    r_buf = Ref(buf, idx)
-    ret = ccall(:write, Csize_t, (Cint, Ref{UInt8}, Csize_t),
-                sockfd, r_buf, 1)
-    LM._strerror(ret, "tcp_write_byte()")
-
-    return ret
-end
-
-function server_main_loop(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}; verbose=false)
-    header_length = modbus_get_header_length(ctx)
-    while true
-        local ret_code,query
-        while true
-            ret_code,query = modbus_receive(ctx)
-            # println("ret_code = $(ret_code)   query = $(query[1:ret_code])")
-            # println("query_type $(query[hdr_length + 1])")
-            ret_code == 0 || break
-        end
-        # do not close connection on bad CRC
-        if ret_code < 0 && ret_code != EMBBADCRC
-            break
-        end
-        if query[header_length + 1] == 0x03
-            verbose && println("Read holding registers")
-            if get_uint16(query, header_length + 4) == UT_REGISTERS_NB_SPECIAL
-                verbose && println("Set an incorrect number of values")
-                set_uint16!(query, header_length + 4, UT_REGISTERS_NB_SPECIAL - 1)
-            elseif get_uint16(query, header_length + 2)  == UT_REGISTERS_ADDRESS_SPECIAL
-                verbose && println("Reply to this special register address by an exception")
-                modbus_reply_exception(ctx, query, LM.MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY)
-            elseif get_uint16(query, header_length + 2) ==
-                UT_REGISTERS_ADDRESS_INVALID_TID_OR_SLAVE
-                raw_req = [0xFF, 0x03, 0x02, 0x00, 0x00]
-                verbose && println("Reply with an invalid TID or slave")
-                modbus_send_raw_request(ctx, raw_req)
-            elseif get_uint16(query, header_length + 2) ==
-                UT_REGISTERS_ADDRESS_SLEEP_500_MS
-                verbose && println("Sleep 0.5 s before replying")
-                sleep(0.5)
-            elseif get_uint16(query, header_length + 2) ==
-                UT_REGISTERS_ADDRESS_BYTE_SLEEP_5_MS
-                # Test low level only available in TCP mode
-                # Catch the reply and send reply byte a byte
-                req = [0x00, 0x1C, 0x00, 0x00, 0x00, 0x05 ,0xFF, 0x03, 0x02, 0x00, 0x00]
-                w_s = modbus_get_socket(ctx)
-                # Copy TID
-                req[2] = query[2]
-                for i = 1:length(req)
-                    sleep(0.005)
-                    rc = tcp_write_byte(w_s, req, i)
-                    rc > -1 || break
-                end
-            end
-        end
-        rc = modbus_reply(ctx, query, mb_mapping)
-        verbose && println("rc = $(rc)")
-        rc >= 0 || break
-    end
-
-    return Libc.errno()
-end
-
-function tcp_server_task(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}, verbose=false)
-    modbus_set_debug(ctx, verbose)
-    srv = modbus_tcp_listen(ctx, 1)
-    t = @task begin
-        sa = modbus_tcp_accept(ctx, srv)
-        rc = server_main_loop(ctx, mb_mapping; verbose)
-        verbose && println("Quit the loop: $(Libc.strerror(rc))")
-        tcp_close(sa)
-        tcp_close(srv)
-    end
-    t.sticky = false
-
-    return t
-end
-
-function tcp_server(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}; verbose=false)
-    modbus_set_debug(ctx, verbose)
-    srv = modbus_tcp_listen(ctx, 1)
-    srv > 0 || error("$Libc.strerror(Libc.errno())")
-    sa = modbus_tcp_accept(ctx, srv)
-    sa > 0 || error("$Libc.strerror(Libc.errno())")
-    rc = server_main_loop(ctx, mb_mapping; verbose)
-    verbose && println("Quit the loop: $(Libc.strerror(rc))")
-    tcp_close(sa)
-    tcp_close(srv)
-end
-
-
-# _close(sockfd::Integer) = ccall(:close, Cint,(Cint,), sockfd)
-#
-
-function unit_test_tcp_client()
     errno = Libc.errno
     ctx_cl = TcpContext("127.0.0.1", 1502)
     modbus_set_debug(ctx_cl, verbose)
@@ -223,7 +15,7 @@ function unit_test_tcp_client()
         @test ((old_response_to_sec,old_response_to_usec)
                == (new_response_to_sec,new_response_to_usec))
     end
-    @testset "Tests involving connection to server" begin
+#    @testset "Tests involving connection to server" begin
         @testset "Single coil bits" begin
             verbose && println("1/2 modbus_write_bit: ")
             rc = modbus_write_bit(ctx_cl, UT_BITS_ADDRESS, 0x1)
@@ -624,17 +416,15 @@ function unit_test_tcp_client()
                                                    UT_REGISTERS_NB_SPECIAL))
             errn = errno()
             @test rc == -1 && errn == EMBBADDATA
-            println("timeouts:\n$(modbus_get_response_timeout(ctx_cl))")
-            println("$(modbus_get_byte_timeout(ctx_cl))")
             verbose && println("* modbus_read_registers at special address: ")
             rc,_ =  @test_logs((:warn, r"Slave device or server is busy"),
                                modbus_read_registers(ctx_cl, UT_REGISTERS_ADDRESS_SPECIAL,
                                                      UT_REGISTERS_NB))
-            errn = errno();println("Busy $(errn) $(EMBXSBUSY) $(EMBBADDATA)")
+            errn = errno()
             @test rc == -1 && errn == EMBXSBUSY
         end
         modbus_close(ctx_cl)
-        modbus_free(ctx_cl)
+        modbus_free!(ctx_cl)
         @testset "Invalid initialization" begin
             einval_reg = Regex("$(Libc.strerror(Libc.EINVAL))")
             ctx_cl = @test_logs((:warn, einval_reg), RtuContext("", 1, :none, 0, 0))
@@ -645,8 +435,6 @@ function unit_test_tcp_client()
             errn = errno()
             @test !modbus_context_valid(ctx_cl) && errn == Libc.EINVAL
         end
-    end
+#    end
     nothing
 end
-
-nothing

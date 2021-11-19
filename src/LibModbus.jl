@@ -10,7 +10,7 @@ export modbus_set_slave, modbus_get_slave, modbus_set_socket!, modbus_get_socket
 export modbus_get_response_timeout, modbus_set_response_timeout, modbus_get_byte_timeout
 export modbus_set_byte_timeout, modbus_set_error_recovery
 export modbus_get_header_length, modbus_connect
-export modbus_close, modbus_flush, modbus_free, modbus_set_debug
+export modbus_close, modbus_flush, modbus_free!, modbus_set_debug
 export modbus_read_bits, modbus_read_input_bits, modbus_read_registers
 export modbus_read_input_registers, modbus_write_bit, modbus_write_register
 export modbus_write_bits, modbus_write_registers, modbus_mask_write_register
@@ -231,7 +231,7 @@ function modbus_close(ctx::ModbusContext)
     ccall((:modbus_close, libmodbus), Cvoid, (Ptr{Cvoid},), ctx._ctx_ptr[])
 end
 
-function modbus_free(ctx::ModbusContext)
+function modbus_free!(ctx::ModbusContext)
     ccall((:modbus_free, libmodbus), Cvoid, (Ptr{Cvoid},), ctx._ctx_ptr[])
     ctx._ctx_ptr[] = C_NULL
 
@@ -439,7 +439,7 @@ function modbus_mapping_new(
     return mbm_ptr
 end
 
-function modbus_free!(mbm_ptr::Ptr{ModbusMapping})
+function modbus_mapping_free!(mbm_ptr::Ptr{ModbusMapping})
     ccall((:modbus_mapping_free, libmodbus), Cvoid,
           (Ptr{ModbusMapping},), mbm_ptr)
 end
