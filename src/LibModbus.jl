@@ -64,9 +64,20 @@ end
 abstract type ModbusContext end
 mutable struct Modbus_t end
 
+@doc raw"""
+    TcpContext(ip_address, port=502)
+
+Create libmodbus context for TCP
+
+# Arguments
+- `ip_address::String`: the IP address of the server to which the client wants to establish
+a connection. A NULL value can be used to listen any addresses in server mode.
+- `port::Integer`: the TCP port to use. It's convenient to use a port number greater than
+or equal to 1024 because it's not necessary to have administrator privileges.
+"""
 struct TcpContext <: ModbusContext
     ip_address::String
-    port::Int
+    port::Cint
     _ctx_ptr::Ref{Ptr{Modbus_t}}
     function TcpContext(ip_address::String, port::Integer)
         ctx_ptr = ccall((:modbus_new_tcp, libmodbus), Ptr{Modbus_t}, (Cstring, Cint),
@@ -79,6 +90,7 @@ struct TcpContext <: ModbusContext
 end
 const MODBUS_TCP_MAX_ADU_LENGTH = 260
 
+modbus_context_valid(::Nothing) = false
 modbus_context_valid(ctx::ModbusContext) = ctx._ctx_ptr[] != C_NULL
 
 function Base.show(io::IO, ctx::TcpContext)
@@ -87,19 +99,41 @@ function Base.show(io::IO, ctx::TcpContext)
     printstyled(io, "TcpContext($(str))"; color)
 end
 
+@doc raw"""
+    RtuContext(serial_port, baud, parity, data_bits, stop_bits)
+
+Create libmodbus context for RTU
+
+# Arguments
+- `serial_port::String`: specifies the name of the serial port handled by the OS
+
+Example:  "/dev/ttyS0" or "/dev/ttyUSB0". On Windows, it's necessary to prepend COM name
+with "\.\" for COM number greater than 9, eg. "\\.\COM10".
+See http://msdn.microsoft.com/en-us/library/aa365247(v=vs.85).aspx for details
+- `baud::Integer`: baud rate of the communication, eg. 9600, 19200, 57600, 115200, etc.
+- `parity::Symbol`: can have one of the following values:
+    :N for none
+    :E for even
+    :O for odd
+- `data_bits::Integer`: the number of bits of data, the allowed values are 5, 6, 7 and 8.
+- `stop_bits::Integer`: the bits of stop, the allowed values are 1 and 2.
+
+# Returns
+- `rc::Int`: the return code is -1 in case of error, 0 if successful.
+"""
 struct RtuContext <: ModbusContext
-    device::String
-    baud::Integer
+    serial_port::String
+    baud::Cint
     parity::Symbol
-    data_bit::Integer
-    stop_bit::Integer
+    data_bits::Cint
+    stop_bits::Cint
     _ctx_ptr::Ref{Ptr{Modbus_t}}
     function RtuContext(
-        device::String,
+        serial_port::String,
         baud::Integer,
         parity::Symbol,
-        data_bit::Integer,
-        stop_bit::Integer
+        data_bits::Integer,
+        stop_bits::Integer
         )
         if parity === :none
             prt = 'N'
@@ -110,21 +144,25 @@ struct RtuContext <: ModbusContext
         else
             error("unknown parity value specified")
         end
+        5 <= data_bits <= 8 || error("the data_bits value of $(data_bits) is not allowed")
+        1 <= stop_bits <= 2 || error("the stop_bits value of $(stop_bits) is not allowed")
         ctx_ptr = ccall((:modbus_new_rtu, libmodbus), Ptr{Modbus_t},
                         (Cstring, Cint, Cchar, Cint, Cint),
-                        device, baud, prt, data_bit, stop_bit)
+                        serial_port, baud, prt, data_bits, stop_bits)
         if ctx_ptr == C_NULL
             _strerror(-1, "RtuContext()")
         end
-        ctx = new(device, baud, parity, data_bit, stop_bit, ctx_ptr)
+        ctx = new(serial_port, baud, parity, data_bits, stop_bits, ctx_ptr)
         return ctx
     end
 end
 
 function Base.show(io::IO, ctx::RtuContext)
     color = modbus_context_valid(ctx) ? :green : :red
-    str =  modbus_context_valid(ctx) ? "RtuContext(device $(ctx.device), baud $(ctx.baud), "*
-        "parity $(ctx.parity)), data_bit $(ctx.data_bit), stop_bit $(ctx.stop_bit))" : "NULL"
+    str =  (modbus_context_valid(ctx) ?
+        "RtuContext(serial_port $(ctx.serial_port), baud $(ctx.baud), parity $(ctx.parity), "*
+        "data_bits $(ctx.data_bits), stop_bits $(ctx.stop_bits))" :
+        "NULL" )
     printstyled(io, str; color)
 end
 
@@ -342,7 +380,7 @@ end
     modbus_set_error_recovery(ctx::ModbusContext, err_rec::Integer) -> Int32
 
 Set the error recovery mode to apply when the connection fails or the byte received is not
-expected. The argument error_recovery may be bitwise-or’ed with zero or more
+expected. The argument error_recovery may be bitwise-or'ed with zero or more
 of the following constants.
 
 By default there is no error recovery (MODBUS_ERROR_RECOVERY_NONE) so the application
@@ -366,7 +404,7 @@ The response timeout delay will be used to sleep.
 
 The modes are mask values and so they are complementary.
 
-It’s not recommended to enable error recovery for slave/server.
+It's not recommended to enable error recovery for slave/server.
 
 # Arguments
 - `ctx::ModbusContext`: libmodbus context
@@ -496,9 +534,8 @@ function modbus_set_debug(ctx::ModbusContext, flag::Bool)
 end
 
 function _strerror(return_code::Integer, message::AbstractString)
-    err_no = Libc.errno()
+    err_no::Cint = Libc.errno()
     if return_code < 0
-        return_code = err_no
         str = ccall((:modbus_strerror,libmodbus), Cstring, (Cint,), err_no)
         @warn "$(message): "*unsafe_string(str)
     end
@@ -597,7 +634,7 @@ The result of the reading is stored in dest array as word values (16 bits).
 
 The function uses the Modbus function code 0x04 (read input registers). The holding
 registers and input registers have different historical meaning, but nowadays
-it’s more common to use holding registers only.
+it's more common to use holding registers only.
 
 # Arguments
 - `ctx::ModbusContext`: libmodbus context
@@ -808,7 +845,7 @@ prefixed by MODBUS_FC_ (eg. MODBUS_FC_READ_HOLDING_REGISTERS), to help build of 
      counting the extra data relating to the backend, if successful.
 """
 function modbus_send_raw_request(ctx::ModbusContext, raw_req::AbstractVector{UInt8})
-    nb = length(raw_req)
+    nb = length(raw_req) - 1
     ret = ccall((:modbus_send_raw_request, libmodbus), Cint,
                 (Ptr{Cvoid}, Ref{UInt8}, Cint),
                 ctx._ctx_ptr[], raw_req, nb)
@@ -862,7 +899,7 @@ end
 
 Send a request to the controller to obtain a description of the controller.
 The response stored in dest contains:
-- the slave ID, this unique ID is in reality not unique at all so it’s not possible to depend on it to know how the information are packed in the response.
+- the slave ID, this unique ID is in reality not unique at all so it's not possible to depend on it to know how the information are packed in the response.
 - the run indicator status (0x00 = OFF, 0xFF = ON)
 - additional data specific to each controller. For example, libmodbus returns the version of the library as a string.
 
@@ -879,13 +916,12 @@ The response stored in dest contains:
 - `vec::Vector{UInt8}`: response from the controller 
 """
 function modbus_report_slave_id(ctx::ModbusContext, max_dest::Integer)
-    dest = Vector{UInt8}(undef, max_dest)
+    dest = zeros(UInt8, max_dest)
     ret = ccall((:modbus_report_slave_id, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Ref{UInt8}), ctx._ctx_ptr[], max_dest, dest)
     _strerror(ret, "modbus_report_slave_id()")
-    ret <= max_dest || @warn "$(ret) bytes of output truncated to $(max_dest)"
 
-    return ret,dest[1:min(max_dest, ret)]
+    return ret,dest
 end
 
 """
@@ -904,7 +940,7 @@ from 10000 to 10009, you can use:
 
 With this code, only 10 registers (uint16_t) are allocated.
 
-If it isn’t necessary to allocate an array for a specific type of data, you can pass the zero value in argument, the associated pointer will be NULL.
+If it isn't necessary to allocate an array for a specific type of data, you can pass the zero value in argument, the associated pointer will be NULL.
 
 This function may be used to handle requests in a Modbus server/slave.
 
@@ -949,7 +985,7 @@ are initialized to zero.
 This function is equivalent to a call of the modbus_mapping_new_start_address()
 function with all start addresses to 0.
 
-If it isn’t necessary to allocate an array for a specific type of data, you can pass
+If it isn't necessary to allocate an array for a specific type of data, you can pass
 the zero value in argument, the associated pointer will be NULL.
 
 # Arguments

@@ -38,7 +38,7 @@ function server_main_loop(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}; verbo
         if ret_code < 0 && ret_code != EMBBADCRC
             break
         end
-        if query[header_length + 1] == 0x03
+        if query[header_length + 1] == MODBUS_FC_READ_HOLDING_REGISTERS
             verbose && println("Read holding registers")
             if get_uint16(query, header_length + 4) == UT_REGISTERS_NB_SPECIAL
                 verbose && println("Set an incorrect number of values")
@@ -117,8 +117,8 @@ function unit_test_server(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}; verbo
     tcp_close(srv)
 end
 
-function start_unit_test_server(ctx, mb_mapping)
-    t = @task unit_test_server(ctx, mb_mapping)
+function start_unit_test_server(ctx, mb_mapping; verbose=false)
+    t = @task unit_test_server(ctx, mb_mapping; verbose)
     t.sticky = false;
     schedule(t)
 end

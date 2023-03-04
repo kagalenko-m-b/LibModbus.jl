@@ -8,14 +8,20 @@ function unit_test_client(verbose=true)
     modbus_flush(ctx_cl)
     #modbus_set_error_recovery(ctx_cl, Int(MODBUS_ERROR_RECOVERY_LINK) |
     #    Int(MODBUS_ERROR_RECOVERY_PROTOCOL))
-   @testset "LibModbus.jl tests" begin
-    rc,old_response_to_sec,old_response_to_usec = modbus_get_response_timeout(ctx_cl)
-    modbus_connect(ctx_cl) >= 0 || error("connection failed")
-    @testset "1/1 No response timeout modification on connect" begin
-        rc,new_response_to_sec,new_response_to_usec = modbus_get_response_timeout(ctx_cl)
-        @test ((old_response_to_sec,old_response_to_usec)
-               == (new_response_to_sec,new_response_to_usec))
-    end
+    @testset "LibModbus.jl tests" begin
+        @testset "Initialization and freeing" begin
+            ctx = RtuContext("/dev/dummy", 9600, :none, 8, 1);
+            @test modbus_context_valid(ctx)
+            modbus_free!(ctx)
+            @test !modbus_context_valid(ctx)
+        end
+        rc,old_response_to_sec,old_response_to_usec = modbus_get_response_timeout(ctx_cl)
+        modbus_connect(ctx_cl) >= 0 || error("connection failed")
+        @testset "No response timeout modification on connect" begin
+            rc,new_response_to_sec,new_response_to_usec = modbus_get_response_timeout(ctx_cl)
+            @test ((old_response_to_sec,old_response_to_usec)
+                   == (new_response_to_sec,new_response_to_usec))
+        end
         @testset "Single coil bits" begin
             verbose && println("1/2 modbus_write_bit: ")
             rc = modbus_write_bit(ctx_cl, UT_BITS_ADDRESS, 0x1)
@@ -307,11 +313,13 @@ function unit_test_client(verbose=true)
             errn = errno()
             @test rc == -1  && errn == EMBBADDATA
             modbus_flush(ctx_cl)
-            verbose && println("2/2 Report slave ID:")
+            #
+            verbose && println("1/1 Report slave ID:")
             #
             rc,rp_bits = modbus_report_slave_id(ctx_cl, NB_REPORT_SLAVE_ID)
             # Run status indicator is ON
             @test rc > 1 && rp_bits[2] == 0xFF
+            length(rp_bits) > 2 && println(String(rp_bits[3:end]))
 
             # Save original timeout
             rc,old_response_to_sec,old_response_to_usec =
@@ -409,32 +417,32 @@ function unit_test_client(verbose=true)
             sleep(0.4)
             modbus_flush(ctx_cl)
         end
-        @testset "Bad response" begin
-            verbose && println("* modbus_read_registers with invalid data: ")
-            rc,_= @test_logs((:warn, r"Invalid data"),
-                             modbus_read_registers(ctx_cl, UT_REGISTERS_ADDRESS,
-                                                   UT_REGISTERS_NB_SPECIAL))
-            errn = errno()
-            @test rc == -1 && errn == EMBBADDATA
-            verbose && println("* modbus_read_registers at special address: ")
-            rc,_ =  @test_logs((:warn, r"Slave device or server is busy"),
-                               modbus_read_registers(ctx_cl, UT_REGISTERS_ADDRESS_SPECIAL,
-                                                     UT_REGISTERS_NB))
-            errn = errno()
-            @test rc == -1 && errn == EMBXSBUSY
-        end
-        modbus_close(ctx_cl)
-        modbus_free!(ctx_cl)
-        @testset "Invalid initialization" begin
-            einval_reg = Regex("$(Libc.strerror(Libc.EINVAL))")
-            ctx_cl = @test_logs((:warn, einval_reg), RtuContext("", 1, :none, 0, 0))
-            errn = errno()
-            @test !modbus_context_valid(ctx_cl) && errn == Libc.EINVAL
+@testset "Bad response" begin
+    verbose && println("* modbus_read_registers with invalid data: ")
+    rc,_= @test_logs((:warn, r"Invalid data"),
+                     modbus_read_registers(ctx_cl, UT_REGISTERS_ADDRESS,
+                                           UT_REGISTERS_NB_SPECIAL))
+    errn = errno()
+    @test rc == -1 && errn == EMBBADDATA
+    verbose && println("* modbus_read_registers at special address: ")
+    rc,_ =  @test_logs((:warn, r"Slave device or server is busy"),
+                       modbus_read_registers(ctx_cl, UT_REGISTERS_ADDRESS_SPECIAL,
+                                             UT_REGISTERS_NB))
+    errn = errno()
+    @test rc == -1 && errn == EMBXSBUSY
+end
+modbus_close(ctx_cl)
+modbus_free!(ctx_cl)
+@testset "Invalid initialization" begin
+    einval_reg = Regex("$(Libc.strerror(Libc.EINVAL))")
+    ctx_cl = @test_logs((:warn, einval_reg), RtuContext("", 1, :none, 8, 1))
+    errn = errno()
+    @test !modbus_context_valid(ctx_cl) && errn == Libc.EINVAL
     
-            ctx = @test_logs((:warn, einval_reg), RtuContext("/dev/dummy", 0, :none, 0, 0))
-            errn = errno()
-            @test !modbus_context_valid(ctx_cl) && errn == Libc.EINVAL
-        end
-    end
-    nothing
+    ctx = @test_logs((:warn, einval_reg), RtuContext("/dev/dummy", 0, :none, 8, 1))
+    errn = errno()
+    @test !modbus_context_valid(ctx_cl) && errn == Libc.EINVAL
+end
+end
+nothing
 end
