@@ -537,7 +537,11 @@ function _strerror(return_code::Integer, message::AbstractString)
     err_no::Cint = Libc.errno()
     if return_code < 0
         str = ccall((:modbus_strerror,libmodbus), Cstring, (Cint,), err_no)
-        @warn "$(message): "*unsafe_string(str)
+        if err_no == Libc.ECONNRESET
+            @info "$(message): "*unsafe_string(str)
+        else
+            @warn "$(message): "*unsafe_string(str)
+        end
     end
 
     return nothing
