@@ -8,11 +8,11 @@ function tcp_write_byte(sockfd::Integer, buf::AbstractVector{UInt8}, idx)
 end
 
 function server_main_loop(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}; verbose=false)
-    header_length = modbus_get_header_length(ctx)
+    header_length = ctx.header_length
     while true
         local ret_code,query
         while true
-            ret_code,query = modbus_receive(ctx)
+            ret_code,query = receive(ctx)
             # println("ret_code = $(ret_code)   query = $(query[1:ret_code])")
             # println("query_type $(query[hdr_length + 1])")
             ret_code == 0 || break
@@ -28,12 +28,12 @@ function server_main_loop(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}; verbo
                 set_uint16!(query, header_length + 4, UT_REGISTERS_NB_SPECIAL - 1)
             elseif get_uint16(query, header_length + 2)  == UT_REGISTERS_ADDRESS_SPECIAL
                 verbose && println("Reply to this special register address by an exception")
-                modbus_reply_exception(ctx, query, LM.MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY)
+                reply_exception(ctx, query, LM.MODBUS_EXCEPTION_SLAVE_OR_SERVER_BUSY)
             elseif get_uint16(query, header_length + 2) ==
                 UT_REGISTERS_ADDRESS_INVALID_TID_OR_SLAVE
                 raw_req = [0xFF, 0x03, 0x02, 0x00, 0x00]
                 verbose && println("Reply with an invalid TID or slave")
-                modbus_send_raw_request(ctx, raw_req)
+                send_raw_request(ctx, raw_req)
             elseif get_uint16(query, header_length + 2) ==
                 UT_REGISTERS_ADDRESS_SLEEP_500_MS
                 verbose && println("Sleep 0.5 s before replying")
@@ -43,7 +43,7 @@ function server_main_loop(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}; verbo
                 # Test low level only available in TCP mode
                 # Catch the reply and send reply byte a byte
                 req = [0x00, 0x1C, 0x00, 0x00, 0x00, 0x05 ,0xFF, 0x03, 0x02, 0x00, 0x00]
-                w_s = modbus_get_socket(ctx)
+                w_s = ctx.socket
                 # Copy TID
                 req[2] = query[2]
                 for i = 1:length(req)
@@ -53,7 +53,7 @@ function server_main_loop(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}; verbo
                 end
             end
         end
-        rc = modbus_reply(ctx, query, mb_mapping)
+        rc = reply(ctx, query, mb_mapping)
         verbose && println("rc = $(rc)")
         rc >= 0 || break
     end
@@ -88,10 +88,10 @@ function init_server_mapping()
 end
 
 function unit_test_server(ctx::TcpContext, mb_mapping::Ptr{ModbusMapping}; verbose=false)
-    modbus_set_debug(ctx, verbose)
-    srv = modbus_tcp_listen(ctx, 1)
+    modbus_set_debug!(ctx, verbose)
+    srv = tcp_listen(ctx, 1)
     srv > 0 || error("$(Libc.strerror(Libc.errno()))")
-    sa = modbus_tcp_accept(ctx, srv)
+    sa = tcp_accept(ctx, srv)
     sa > 0 || error("$(Libc.strerror(Libc.errno()))")
     rc = server_main_loop(ctx, mb_mapping; verbose)
     verbose && println("Quit the loop: $(Libc.strerror(rc))")
