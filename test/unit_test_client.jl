@@ -30,10 +30,10 @@ function unit_test_client(verbose=true)
             @test ctx.rts_delay == 2000
 
             verbose && println("2/2 common properties:")
-            ctx.slave_id = 0
-            @test ctx.slave_id == 0
-            ctx.slave_id = 3
-            @test ctx.slave_id == 3
+            ctx.slave_address = 0
+            @test ctx.slave_address == 0
+            ctx.slave_address = 3
+            @test ctx.slave_address == 3
             
             modbus_free!(ctx)
             @test !ctx.valid
@@ -319,9 +319,9 @@ function unit_test_client(verbose=true)
         end
 
         @testset "Slave reply" begin
-            old_slave = ctx_cl.slave_id
+            old_slave = ctx_cl.slave_address
             verbose && println("1/3 Response from slave $(INVALID_SERVER_ID): ")
-            ctx_cl.slave_id = INVALID_SERVER_ID
+            ctx_cl.slave_address = INVALID_SERVER_ID
             rc,_ = read_registers(ctx_cl, UT_REGISTERS_ADDRESS, UT_REGISTERS_NB)
             @test rc == UT_REGISTERS_NB
 
@@ -333,7 +333,7 @@ function unit_test_client(verbose=true)
             @test rc == UT_REGISTERS_NB
 
             # Restore slave
-            ctx_cl.slave_id = old_slave
+            ctx_cl.slave_address = old_slave
             verbose && println("3/3 Response with an invalid TID or slave: ")
             rc,_= @test_logs((:warn, r"Invalid data"),
                              read_registers(ctx_cl,
@@ -461,7 +461,7 @@ function unit_test_client(verbose=true)
     errn = errno()
     @test rc == -1 && errn == EMBXSBUSY
 end
-modbus_close!(ctx_cl)
+disconnect(ctx_cl)
 modbus_free!(ctx_cl)
 @testset "Invalid initialization" begin
     einval_reg = Regex("$(Libc.strerror(Libc.EINVAL))")

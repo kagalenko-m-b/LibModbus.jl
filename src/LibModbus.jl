@@ -6,8 +6,8 @@ export ModbusMapping, ModbusContext, TcpContext, RtuContext
 export MbExcpt, MODBUS_ERROR_RECOVERY_NONE, MODBUS_ERROR_RECOVERY_LINK
 export MODBUS_ERROR_RECOVERY_PROTOCOL
 export set_error_recovery
-export connect
-export modbus_close!, modbus_flush!, modbus_free!, modbus_set_debug!
+export connect, disconnect
+export modbus_flush!, modbus_free!, modbus_set_debug!
 export read_bits, read_input_bits, read_registers
 export read_input_registers, write_bit, write_register
 export write_bits, write_registers, mask_write_register
@@ -83,10 +83,15 @@ mutable struct TcpContext <: ModbusContext
             _strerror(-1, "TcpContext()")
         end
         ctx = new(ip_address, port, context_pointer)
-		finalizer(modbus_free!, ctx)
+        finalizer(modbus_finalize!, ctx)
     end
 end
 ctx_properties(::TcpContext) = [:ip_address, :port, :_context_pointer]
+
+function modbus_finalize!(ctx::ModbusContext)
+    disconnect(ctx)
+    modbus_free!(ctx)
+end
 
 @doc raw"""
     RtuContext(serial_port, baud, parity, data_bits, stop_bits)
@@ -142,7 +147,7 @@ mutable struct RtuContext <: ModbusContext
             _strerror(-1, "modbus_new_rtu()")
         end
         ctx = new(serial_port, baud, parity, data_bits, stop_bits, context_pointer)
-        finalizer(modbus_free!, ctx)
+        finalizer(modbus_finalize!, ctx)
     end
 end
 ctx_properties(::RtuContext) = [:serial_port, :baud, :parity, :data_bits, :stop_bits,
@@ -152,7 +157,7 @@ ctx_properties(::RtuContext) = [:serial_port, :baud, :parity, :data_bits, :stop_
 context_valid(::Any) :: Bool = false
 context_valid(ctx::ModbusContext) :: Bool = getfield(ctx, :_context_pointer) != C_NULL
 Base.propertynames(ctx::ModbusContext) = append!(ctx_properties(ctx),
-                                                 [:valid, :slave_id, :socket,
+                                                 [:valid, :slave_address, :socket,
                                                   :response_timeout, :byte_timeout,
                                                   :header_length])
 function Base.show(io::IO, ctx::ModbusContext)
@@ -170,60 +175,60 @@ function Base.show(io::IO, ctx::ModbusContext)
         color = :green
         str *= "(serial_port $(ctx.serial_port), baud $(ctx.baud), "*
             "parity $(ctx.parity), data_bits $(ctx.data_bits), "*
-			"stop_bits $(ctx.stop_bits))"
-	elseif ctx isa TcpContext
+            "stop_bits $(ctx.stop_bits))"
+    elseif ctx isa TcpContext
         str *= "(ip $(ctx.ip_address), port $(ctx.port))"
-	else
-	    str *= "()"
-	end
+    else
+        str *= "()"
+    end
     printstyled(io, str; color)
 end
 
 function Base.setproperty!(ctx::ModbusContext, name::Symbol, x)
-    if name === :slave_id
-	    set_slave!(ctx, x)
-	elseif name === :socket
-	    set_socket!(ctx, x)
-	elseif name === :response_timeout
-	    set_response_timeout(ctx, x[1], x[2])
-	elseif name === :byte_timeout
-	    set_byte_timeout(ctx, x[1], x[2])
+    if name === :slave_address
+        set_slave!(ctx, x)
+    elseif name === :socket
+        set_socket!(ctx, x)
+    elseif name === :response_timeout
+        set_response_timeout(ctx, x[1], x[2])
+    elseif name === :byte_timeout
+        set_byte_timeout(ctx, x[1], x[2])
     elseif ctx isa RtuContext && name === :serial_mode
         rtu_set_serial_mode(ctx, x)
     elseif ctx isa RtuContext && name === :rts
         rtu_set_rts(ctx, x)
     elseif ctx isa RtuContext && name === :rts_delay
         rtu_set_rts_delay(ctx, x)
-	else
+    else
         if !(name in propertynames(ctx))
             error("type $(typeof(ctx)) does not have property \"$name\"")
         end
-	    error("property \"$name\" may not be changed")
-	end
+        error("property \"$name\" may not be changed")
+    end
 end
 
 function Base.getproperty(ctx::ModbusContext, name::Symbol)
     if name === :valid
         context_valid(ctx)
-    elseif name === :slave_id
-	    get_slave(ctx)
-	elseif name === :socket
-	    get_socket(ctx)
-	elseif name === :response_timeout
-	    get_response_timeout(ctx)
+    elseif name === :slave_address
+        get_slave(ctx)
+    elseif name === :socket
+        get_socket(ctx)
+    elseif name === :response_timeout
+        get_response_timeout(ctx)
     elseif name === :byte_timeout
-	    get_byte_timeout(ctx)
-	elseif name === :header_length
-	    get_header_length(ctx)
+        get_byte_timeout(ctx)
+    elseif name === :header_length
+        get_header_length(ctx)
     elseif ctx isa RtuContext && name === :serial_mode
         rtu_get_serial_mode(ctx)
     elseif ctx isa RtuContext && name === :rts
         rtu_get_rts(ctx)
     elseif ctx isa RtuContext && name === :rts_delay
         rtu_get_rts_delay(ctx)
-	else
-	    getfield(ctx, name)
-	end
+    else
+        getfield(ctx, name)
+    end
 end
 
 """
@@ -234,8 +239,8 @@ and the role of the device:
 
 RTU
 
-Define the slave ID of the remote device to talk in master mode or set the internal
-slave ID in slave mode. According to the protocol, a Modbus device must only accept
+Define the slave address of the remote device to talk in master mode or set the internal
+slave address in slave mode. According to the protocol, a Modbus device must only accept
 message holding its slave number or the special broadcast number.
 
 TCP
@@ -340,8 +345,8 @@ function get_response_timeout(ctx::ModbusContext)::NTuple{2, Int32}
                 (Ptr{Cvoid}, Ref{UInt32}, Ref{UInt32}),
                 ctx._context_pointer, to_sec, to_usec)
     _strerror(ret, "modbus_get_response_timeout()")
-	timeout_sec::Int32 = ret < 0 ? -1 : to_sec[]
-	timeout_usec::Int32 = ret < 0 ? -1 : to_usec[]
+    timeout_sec::Int32 = ret < 0 ? -1 : to_sec[]
+    timeout_usec::Int32 = ret < 0 ? -1 : to_usec[]
 
     return timeout_sec,timeout_usec
 end
@@ -392,7 +397,7 @@ function get_byte_timeout(ctx::ModbusContext)::NTuple{2, Int32}
                 (Ptr{Cvoid}, Ref{UInt32}, Ref{UInt32}), ctx._context_pointer, to_sec, to_usec)
     _strerror(ret, "get_byte_timeout()")
     timeout_sec::Int32 = ret < 0 ? -1 : to_sec[]
-	timeout_usec::Int32 = ret < 0 ? -1 : to_usec[]
+    timeout_usec::Int32 = ret < 0 ? -1 : to_usec[]
 
     return timeout_sec,timeout_usec
 end
@@ -525,7 +530,7 @@ function connect(ctx::ModbusContext)::Cint
 end
 
 """
-    modbus_close!(ctx::ModbusContext)
+    disconnect(ctx::ModbusContext)
 
 Close the connection established with the backend set in the Modbus context.
 
@@ -535,7 +540,7 @@ Close the connection established with the backend set in the Modbus context.
 # Returns
 nothing
 """
-function modbus_close!(ctx::ModbusContext)
+function disconnect(ctx::ModbusContext)
     ccall((:modbus_close, libmodbus), Cvoid, (Ptr{Cvoid},), ctx._context_pointer)
 end
 
@@ -579,6 +584,7 @@ The function uses the Modbus function code 0x01 (read coil status).
 - `bv::BitVector`: bitarray of the coils' state
 """
 function read_bits(ctx::ModbusContext, addr::Integer, nb::Integer)
+    ctx.slave_address >= 0 || error("invalid slave address")
     dest = zeros(UInt8, nb)
     ret = ccall((:modbus_read_bits, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt8}),
@@ -607,6 +613,7 @@ The function uses the Modbus function code 0x02 (read input status).
 - `bv::BitVector`: bitarray of the coils' state.
 """
 function read_input_bits(ctx::ModbusContext, addr::Integer, nb::Integer)
+    ctx.slave_address >= 0 || error("invalid slave adddress")
     dest = zeros(UInt8, nb)
     ret = ccall((:modbus_read_input_bits, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt8}),
@@ -635,6 +642,7 @@ The function uses the Modbus function code 0x03 (read holding registers).
 - `v::Vector{UInt16}`: contents of the holding registers
 """
 function read_registers(ctx::ModbusContext, addr::Integer, nb::Integer)
+    ctx.slave_address >= 0 || error("invalid slave address")
     dest = zeros(UInt16, nb)
     ret = ccall((:modbus_read_registers, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt16}), ctx._context_pointer, addr, nb, dest)
@@ -664,7 +672,9 @@ it's more common to use holding registers only.
 - `v::Vector{UInt16}`: contents of the input registers
 """
 function read_input_registers(ctx::ModbusContext, addr::Integer, nb::Integer)
+    ctx.slave_address >= 0 || error("invalid slave address")
     dest = zeros(UInt16, nb)
+    println("read input registers: ")
     ret = ccall((:modbus_read_input_registers, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt16}), ctx._context_pointer, addr, nb, dest)
     _strerror(ret, "modbus_read_input_registers()")
@@ -689,6 +699,7 @@ The function uses the Modbus function code 0x05 (force single coil).
 - `rc::Int`: the return code is -1 in case of error, 1 if successful.
 """
 function write_bit(ctx::ModbusContext, coil_addr::Integer, status)
+    ctx.slave_address >= 0 || error("invalid slave address")
     ret = ccall((:modbus_write_bit, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint), ctx._context_pointer, coil_addr, status)
     _strerror(ret, "modbus_write_bit()")
@@ -712,6 +723,7 @@ The function uses the Modbus function code 0x06 (preset single register).
 - `rc::Int`: the return code is -1 in case of error, 1 if successful.
 """
 function write_register(ctx::ModbusContext, reg_addr::Integer, value::Integer)
+    ctx.slave_address >= 0 || error("invalid slave address")
     ret = ccall((:modbus_write_register, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, UInt16), ctx._context_pointer, reg_addr, value)
     _strerror(ret, "modbus_write_register()")
@@ -738,6 +750,7 @@ The function uses the Modbus function code 0x0F (force multiple coils).
 function write_bits(
     ctx::ModbusContext, addr::Integer, data::Vector{T}
     ) where T<:Union{Bool,UInt8}
+	ctx.slave_address >= 0 || error("invalid slave address")
     nb = length(data)
     ret = ccall((:modbus_write_bits, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt8}), ctx._context_pointer, addr, nb, data)
@@ -765,6 +778,7 @@ The function uses the Modbus function code 0x10 (preset multiple registers).
 function write_registers(
     ctx::ModbusContext, addr::Integer, data::AbstractVector{UInt16}
     )
+	ctx.slave_address >= 0 || error("invalid slave address")
     nb = length(data)
     ret = ccall((:modbus_write_registers, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt16}), ctx._context_pointer, addr, nb, data)
@@ -796,6 +810,7 @@ function mask_write_register(ctx::ModbusContext,
                              addr::Integer,
                              and_mask::UInt16,
                              or_mask::UInt16)
+	ctx.slave_address >= 0 || error("invalid slave address")
     ret = ccall((:modbus_mask_write_register, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, UInt16, UInt16),
                 ctx._context_pointer, addr, and_mask, or_mask)
@@ -822,6 +837,7 @@ The function uses the Modbus function code 0x17 (write/read registers).
 
 # Returns
 - `rc::Int`: the return code is -1 in case of error, number of read registers if successful. 
+- `v::Vector{UInt16}`: contents of the input registers, empty in case of error
 """
 function write_and_read_registers(
     ctx::ModbusContext,
@@ -830,6 +846,7 @@ function write_and_read_registers(
     read_addr::Integer,
     read_nb::Integer
     )
+	ctx.slave_address >= 0 || error("invalid slave address")
     write_nb = length(write_data)
     dest = zeros(UInt16, read_nb)
     ret = ccall((:modbus_write_and_read_registers, libmodbus), Cint,
@@ -863,6 +880,7 @@ prefixed by MODBUS_FC_ (eg. MODBUS_FC_READ_HOLDING_REGISTERS), to help build of 
      counting the extra data relating to the backend, if successful.
 """
 function send_raw_request(ctx::ModbusContext, raw_req::AbstractVector{UInt8})
+    ctx.slave_address >= 0 || error("invalid slave address")
     nb = length(raw_req)
     ret = ccall((:modbus_send_raw_request, libmodbus), Cint,
                 (Ptr{Cvoid}, Ref{UInt8}, Cint),
@@ -1058,7 +1076,7 @@ see the function set_socket().
 
 # Returns
 - `rc::Int`: the return code is -1 in case of error, the request length if successful.
-- `req::Vector{UInt8}`: the indication request received.
+- `req::Vector{UInt8}`: the indication request received, empty in case of error
 """
 function receive(ctx::T) where T<:ModbusContext
     max_adu_length = T <: RtuContext ? MODBUS_RTU_MAX_ADU_LENGTH : MODBUS_TCP_MAX_ADU_LENGTH
