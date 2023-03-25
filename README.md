@@ -49,4 +49,4 @@ julia> disconnect(ctx)
 If you reassigned `ctx` while the serial port is still connected,
 call `GC.gc()` to trigger the finalizer on `ModbusContext`.
 
-See the test directory for more usage examples .
+See the test directory for more usage examples.
