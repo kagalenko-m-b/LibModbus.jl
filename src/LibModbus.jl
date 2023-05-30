@@ -169,10 +169,8 @@ function Base.show(io::IO, ctx::ModbusContext)
         str = "ModbusContext"
     end
     if !ctx.valid
-        color = :red
         str *= "(NULL)"
     elseif ctx isa RtuContext
-        color = :green
         str *= "(serial_port $(ctx.serial_port), baud $(ctx.baud), "*
             "parity $(ctx.parity), data_bits $(ctx.data_bits), "*
             "stop_bits $(ctx.stop_bits))"
@@ -181,7 +179,7 @@ function Base.show(io::IO, ctx::ModbusContext)
     else
         str *= "()"
     end
-    printstyled(io, str; color)
+    printstyled(io, str)
 end
 
 function Base.setproperty!(ctx::ModbusContext, name::Symbol, x)
