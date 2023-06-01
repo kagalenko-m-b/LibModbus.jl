@@ -179,7 +179,7 @@ function Base.show(io::IO, ctx::ModbusContext)
     else
         str *= "()"
     end
-    printstyled(io, str)
+    print(io, str)
 end
 
 function Base.setproperty!(ctx::ModbusContext, name::Symbol, x)
