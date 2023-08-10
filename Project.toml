@@ -1,7 +1,7 @@
 name = "LibModbus"
 uuid = "eb9b09e8-e158-48db-9998-d0f1810f0d04"
 authors = ["kagalenko-m-b <16374215+kagalenko-m-b@users.noreply.github.com>"]
-version = "0.5.0"
+version = "0.5.1"
 
 [deps]
 LibModbus_jll = "f28bf708-275a-52ef-9ea6-4821c17573f9"
