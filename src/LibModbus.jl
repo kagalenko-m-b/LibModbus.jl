@@ -672,7 +672,6 @@ it's more common to use holding registers only.
 function read_input_registers(ctx::ModbusContext, addr::Integer, nb::Integer)
     ctx.slave_address >= 0 || error("invalid slave address")
     dest = zeros(UInt16, nb)
-    println("read input registers: ")
     ret = ccall((:modbus_read_input_registers, libmodbus), Cint,
                 (Ptr{Cvoid}, Cint, Cint, Ref{UInt16}), ctx._context_pointer, addr, nb, dest)
     _strerror(ret, "modbus_read_input_registers()")
